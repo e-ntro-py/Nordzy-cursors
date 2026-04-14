@@ -27,7 +27,7 @@ function main() {
     local estimation_count=0
     for theme_name in ${themes}; do
         start_time=$SECONDS
-        progress=$(( progress + 1 ))
+        progress=$((progress + 1))
         if [ ${estimation_count} -gt 0 ]; then
             mean_estimate="$(perl -E "say (${total_estimate} / ${estimation_count})")"
         else
@@ -35,8 +35,8 @@ function main() {
         fi
         echo "[${progress}/${total}] Making theme ${theme_name}... (estimated time: $(echo "$(perl -E "say ${mean_estimate} * (${total} - ${progress})") / 60" | bc) minutes)"
         make_theme "${theme_name}"
-        total_estimate=$(( total_estimate + (SECONDS - start_time) ))
-        estimation_count=$(( estimation_count + 1 ))
+        total_estimate=$((total_estimate + (SECONDS - start_time)))
+        estimation_count=$((estimation_count + 1))
     done
 
     # INFO: Export Nordzy-hyprcursors and Nordzy-hyprcursors-white to the archives folder
@@ -44,7 +44,7 @@ function main() {
         local archive_file="${archives_dir}/${archive}.tar.gz"
         rm -rf "${archive_file}"
         tar zcvf "${archive_file}" --directory="${hyprcursors_dir}" "${archive}"
-        sha256sum "${archive_file}" >> "${archives_dir}/checksums"
+        sha256sum "${archive_file}" >>"${archives_dir}/checksums"
     done
 }
 
@@ -71,7 +71,11 @@ function make_theme() {
     mkdir -p "${hyprcursor_shapes_dir}"
     # Create the manifest
     echo "cursors_directory = hyprcursors
-name = ${theme_name}" > "${hyprcursor_theme_dir}/manifest.hl"
+name = ${theme_name}" >"${hyprcursor_theme_dir}/manifest.hl"
+    local handiness=""
+    if [[ "${theme_name}" == *"-lefthand" ]]; then
+        handiness="-lefthand"
+    fi
 
     # INFO: Prepare the theme svgs for shape extraction
 
@@ -92,28 +96,28 @@ name = ${theme_name}" > "${hyprcursor_theme_dir}/manifest.hl"
 
     # INFO: Make all the static shapes
 
-    mapfile -t slices < <(tr -d '\n' < "${tmp_theme_svg}" | grep -oP "<g.*?inkscape:label=\"slices\".*?</g>" | sed 's/<g[^>]*>//' | grep -Po 'id="\K.*?(?=")')
+    mapfile -t slices < <(tr -d '\n' <"${tmp_theme_svg}" | grep -oP "<g.*?inkscape:label=\"slices\".*?</g>" | sed 's/<g[^>]*>//' | grep -Po 'id="\K.*?(?=")')
 
     local progress=0
     local total=${#slices[@]}
     for shape_name in "${slices[@]}"; do
-        progress=$(( progress + 1 ))
+        progress=$((progress + 1))
         echo "[${progress}/${total}] Making shape ${shape_name}..."
-        make_shape "${shape_name}" "${tmp_theme_svg}" "${hyprcursor_shapes_dir}"
+        make_shape "${shape_name}" "${tmp_theme_svg}" "${hyprcursor_shapes_dir}" "${handiness}"
     done
 
     # INFO: Make all the animated shapes
 
     local all_animation_slices
-    all_animation_slices=$(tr -d '\n' < "${tmp_animation_theme_svg}" | grep -oP "<g.*?inkscape:label=\"slices\".*?</g>" | sed 's/<g[^>]*>//' | grep -Po 'id="\K.*?(?=")')
+    all_animation_slices=$(tr -d '\n' <"${tmp_animation_theme_svg}" | grep -oP "<g.*?inkscape:label=\"slices\".*?</g>" | sed 's/<g[^>]*>//' | grep -Po 'id="\K.*?(?=")')
     mapfile -t animated_shapes < <(echo "${all_animation_slices}" | sed "s/-[[:digit:]]*//g" | tr ' ' '\n' | sort | uniq)
 
     local progress=0
     local total=${#animated_shapes[@]}
     for shape_name in "${animated_shapes[@]}"; do
-        progress=$(( progress + 1 ))
+        progress=$((progress + 1))
         echo "[${progress}/${total}] Making shape ${shape_name}..."
-        make_animated_shape "${shape_name}" "${tmp_animation_theme_svg}" "${hyprcursor_shapes_dir}" "${all_animation_slices}"
+        make_animated_shape "${shape_name}" "${tmp_animation_theme_svg}" "${hyprcursor_shapes_dir}" "${all_animation_slices}" "${handiness}"
     done
 
     # INFO: Make the hyprcursor and export it to the themes dir
@@ -138,25 +142,26 @@ function make_animated_shape() {
     # INFO: Export and add every slice to the shape
     rm -f "${hyprcursor_shapes_dir}/${shape_name}/meta.hl"
     for slice_name in $(echo "${all_animation_slices}" | grep "^${shape_name}" | sort); do
-        echo "define_size = 0, ${slice_name}.svg, $(( 1000 / 16 ))" >> "${hyprcursor_shapes_dir}/${shape_name}/meta.hl"
+        echo "define_size = 0, ${slice_name}.svg, $((1000 / 16))" >>"${hyprcursor_shapes_dir}/${shape_name}/meta.hl"
         output_slice "${theme_svg_filepath}" "${hyprcursor_shapes_dir}/${shape_name}/${slice_name}.svg" "${slice_name}"
     done
 
     # INFO: Add everride and hotspot info
-    append_info_to_shape_meta_file "${hyprcursor_shapes_dir}" "${shape_name}"
+    append_info_to_shape_meta_file "${hyprcursor_shapes_dir}" "${shape_name}" "${handiness}"
 }
 
 function make_shape() {
     local shape_name="${1}"
     local theme_svg_filepath="${2}"
     local hyprcursor_shapes_dir="${3}"
+    local handiness="${4}"
 
     # INFO: Prepare hyprcursor shape
     mkdir -p "${hyprcursor_shapes_dir}/${shape_name}"
-    echo "define_size = 0, ${shape_name}.svg" > "${hyprcursor_shapes_dir}/${shape_name}/meta.hl"
+    echo "define_size = 0, ${shape_name}.svg" >"${hyprcursor_shapes_dir}/${shape_name}/meta.hl"
 
     # INFO: Add everride and hotspot info
-    append_info_to_shape_meta_file "${hyprcursor_shapes_dir}" "${shape_name}"
+    append_info_to_shape_meta_file "${hyprcursor_shapes_dir}" "${shape_name}" "${handiness}"
 
     output_slice "${theme_svg_filepath}" "${hyprcursor_shapes_dir}/${shape_name}/${shape_name}.svg" "${shape_name}"
 }
@@ -165,6 +170,7 @@ function output_slice() {
     local theme_svg_filepath="${1}"
     local output_svg="${2}"
     local slice_name="${3}"
+    local handiness="${4}"
 
     # Cp svg shape
     cp "${theme_svg_filepath}" "${output_svg}"
@@ -182,25 +188,26 @@ function output_slice() {
     inkscape "${output_svg}" --actions='select-by-selector:g[inkscape\00003Alabel="cursors"];selection-ungroup' -o "${output_svg}"
 
     # use svgo to cleanup everything outside of the page
-    svgo "${output_svg}" -o "${output_svg}" --config "${script_dir}/svgo.config.mjs" > /dev/null
+    svgo "${output_svg}" -o "${output_svg}" --config "${script_dir}/svgo.config.mjs" >/dev/null
 }
 
 function append_info_to_shape_meta_file() {
     local hyprcursor_shapes_dir="${1}"
     local shape_name="${2}"
+    local handiness="${3}"
 
     # INFO: Resolve hotspots
-    IFS=" " read -r -a hotspots_in <<< "$(head -n1 "${script_dir}/hotspots/${shape_name}.in" | cut -d " " -f 1-3)"
+    IFS=" " read -r -a hotspots_in <<<"$(head -n1 "${script_dir}/hotspots${handiness}/${shape_name}.in" | cut -d " " -f 1-3)"
 
     # INFO: Resolve shapes overrides
     local overrides
     overrides="$(grep "ln\s*-sf\s*${shape_name}" "${script_dir}/make.sh" | cut -d ' ' -f 4 | head -c -1 | tr '\n' ';')"
 
     # INFO: Write meta.hl
-    echo "hotspot_x = $(perl -E "say ${hotspots_in[1]} / ${hotspots_in[0]}")" >> "${hyprcursor_shapes_dir}/${shape_name}/meta.hl"
-    echo "hotspot_y = $(perl -E "say ${hotspots_in[2]} / ${hotspots_in[0]}")" >> "${hyprcursor_shapes_dir}/${shape_name}/meta.hl"
+    echo "hotspot_x = $(perl -E "say ${hotspots_in[1]} / ${hotspots_in[0]}")" >>"${hyprcursor_shapes_dir}/${shape_name}/meta.hl"
+    echo "hotspot_y = $(perl -E "say ${hotspots_in[2]} / ${hotspots_in[0]}")" >>"${hyprcursor_shapes_dir}/${shape_name}/meta.hl"
     if [ -n "${overrides}" ]; then
-        echo "define_override = ${overrides}" >> "${hyprcursor_shapes_dir}/${shape_name}/meta.hl"
+        echo "define_override = ${overrides}" >>"${hyprcursor_shapes_dir}/${shape_name}/meta.hl"
     fi
 }
 
